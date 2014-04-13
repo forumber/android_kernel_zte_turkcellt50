@@ -213,8 +213,10 @@ struct msm_fb_data_type {
 	/* for non-blocking */
 	struct task_struct *disp_thread;
 	atomic_t commits_pending;
+	atomic_t kickoff_pending;
 	wait_queue_head_t commit_wait_q;
 	wait_queue_head_t idle_wait_q;
+	wait_queue_head_t kickoff_wait_q;
 	bool shutdown_pending;
 
 	struct task_struct *splash_thread;
@@ -228,6 +230,12 @@ struct msm_fb_data_type {
 
 	u32 dcm_state;
 	struct list_head proc_list;
+<<<<<<< HEAD
+=======
+	u32 wait_for_kickoff;
+
+	int blank_mode;
+>>>>>>> afc9b8f... msm: display: reduce display commit prepare waiting time
 };
 
 static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
