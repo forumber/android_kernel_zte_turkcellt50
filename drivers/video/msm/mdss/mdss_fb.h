@@ -230,12 +230,9 @@ struct msm_fb_data_type {
 
 	u32 dcm_state;
 	struct list_head proc_list;
-<<<<<<< HEAD
-=======
 	u32 wait_for_kickoff;
 
 	int blank_mode;
->>>>>>> afc9b8f... msm: display: reduce display commit prepare waiting time
 };
 
 static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
