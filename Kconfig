@@ -14,4 +14,4 @@ config TARGET_BUILD_VARIANT
 
 source "arch/$SRCARCH/Kconfig"
 
-source "arch/$SRCARCH/$TARGET_BUILD_VARIANT/Kconfig
+source "arch/$SRCARCH/eng/Kconfig
