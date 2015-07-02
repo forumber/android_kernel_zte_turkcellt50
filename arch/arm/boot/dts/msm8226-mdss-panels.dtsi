@@ -1,0 +1,29 @@
+/* Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/include/ "dsi-panel-hx8394a-720p-video.dtsi"
+/include/ "dsi-panel-nt35590-720p-video.dtsi"
+/include/ "dsi-panel-nt35521-720p-video.dtsi"
+/include/ "dsi-panel-nt35596-1080p-video.dtsi"
+/include/ "dsi-panel-nt35590-720p-cmd.dtsi"
+/include/ "dsi-panel-ssd2080m-720p-video.dtsi"
+/include/ "dsi-panel-jdi-1080p-video.dtsi"
+/include/ "dsi-panel-HX8379A-CMI-IPS-4p5-FWVGA-video-zte-400.dtsi"
+/include/ "dsi-panel-HX8379A-HSD-TN-4p5-FWVGA-video-zte-401.dtsi"
+/include/ "dsi-panel-HX8379A-TM-TM-4p5-FWVGA-video-zte-402.dtsi"
+/include/ "dsi-panel-NT35517-BOE-BOE-4p5-QHD-video-zte-403.dtsi"
+/include/ "dsi-panel-nt35590-cmi-5p0-720p-cmd-zte-301.dtsi"
+/include/ "dsi-panel-nt35590-auo-5p0-720p-cmd-zte-303.dtsi"
+/include/ "dsi-panel-otm1283a-tm-5p0-720p-video-zte-700.dtsi"
+/include/ "dsi-panel-hx8394d-hsd-5p0-720p-video-zte-701.dtsi"
+/include/ "dsi-panel-zte-hsd-nt35512-4p0-wvga-video.dtsi"
+/include/ "dsi-panel-zte-cpt-fl108802-4p0-wvga-video.dtsi"

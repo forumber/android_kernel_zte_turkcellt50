@@ -1,0 +1,3 @@
+config TARGET_BUILD_USER
+	bool
+	default y
