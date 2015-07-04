@@ -828,6 +828,12 @@ struct hal_h264_vui_timing_info {
 	u32 time_scale;
 };
 
+struct hal_vpe_color_space_conversion {
+	u32 csc_matrix[9];
+	u32 csc_bias[3];
+	u32 csc_limit[6];
+};
+
 enum vidc_resource_id {
 	VIDC_RESOURCE_OCMEM = 0x00000001,
 	VIDC_UNUSED_RESORUCE = 0x10000000,
