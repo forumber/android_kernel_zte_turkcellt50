@@ -8057,7 +8057,7 @@ static int wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
           struct net_device *dev, struct cfg80211_sched_scan_request *request)
 {
     hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
-    tSirPNOScanReq pnoRequest = {0};
+    tpSirPNOScanReq pPnoRequest = NULL;
     hdd_context_t *pHddCtx;
     tHalHandle hHal;
     v_U32_t i, indx, num_ch;
@@ -8099,31 +8099,24 @@ static int wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
         return -EBUSY;
     }
 
-    if (TRUE == pHddCtx->isPnoEnable)
+    pPnoRequest = (tpSirPNOScanReq) vos_mem_malloc(sizeof (tSirPNOScanReq));
+    if (NULL == pPnoRequest)
     {
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_WARN,
-                  FL("already PNO is enabled"));
-       return -EBUSY;
+        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_FATAL,
+                  "%s: vos_mem_malloc failed", __func__);
+        return -ENOMEM;
     }
 
-    if (VOS_STATUS_SUCCESS != wlan_hdd_cancel_remain_on_channel(pHddCtx))
-    {
-        VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-                  "%s: abort ROC failed ", __func__);
-        return -EBUSY;
-    }
+    memset(pPnoRequest, 0, sizeof (tSirPNOScanReq));
+    pPnoRequest->enable = 1; /*Enable PNO */
+    pPnoRequest->ucNetworksCount = request->n_match_sets;
 
-    pHddCtx->isPnoEnable = TRUE;
-
-    pnoRequest.enable = 1; /*Enable PNO */
-    pnoRequest.ucNetworksCount = request->n_match_sets;
-
-    if (( !pnoRequest.ucNetworksCount ) ||
-        ( pnoRequest.ucNetworksCount > SIR_PNO_MAX_SUPP_NETWORKS ))
+    if (( !pPnoRequest->ucNetworksCount ) ||
+        ( pPnoRequest->ucNetworksCount > SIR_PNO_MAX_SUPP_NETWORKS ))
     {
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                   "%s: Network input is not correct %d",
-                             __func__, pnoRequest.ucNetworksCount);
+                             __func__, pPnoRequest->ucNetworksCount);
         ret = -EINVAL;
         goto error;
     }
@@ -8169,106 +8162,70 @@ static int wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
         hddLog(VOS_TRACE_LEVEL_INFO,"Channel-List:  %s ", chList);
      }
 
-     pnoRequest.aNetworks =
-              vos_mem_malloc(sizeof(tSirNetworkType)*pnoRequest.ucNetworksCount);
-     if (pnoRequest.aNetworks == NULL)
-     {
-         VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-             FL("failed to allocate memory aNetworks %u"),
-                 (uint32)sizeof(tSirNetworkType)*pnoRequest.ucNetworksCount);
-         goto error;
-     }
-     vos_mem_zero(pnoRequest.aNetworks,
-                  sizeof(tSirNetworkType)*pnoRequest.ucNetworksCount);
-
-
     /* Filling per profile  params */
-    for (i = 0; i < pnoRequest.ucNetworksCount; i++)
+    for (i = 0; i < pPnoRequest->ucNetworksCount; i++)
     {
-        pnoRequest.aNetworks[i].ssId.length =
+        pPnoRequest->aNetworks[i].ssId.length =
                request->match_sets[i].ssid.ssid_len;
 
-        if (( 0 == pnoRequest.aNetworks[i].ssId.length ) ||
-            ( pnoRequest.aNetworks[i].ssId.length > 32 ) )
+        if (( 0 == pPnoRequest->aNetworks[i].ssId.length ) ||
+            ( pPnoRequest->aNetworks[i].ssId.length > 32 ) )
         {
             VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                       "%s: SSID Len %d is not correct for network %d",
-                      __func__, pnoRequest.aNetworks[i].ssId.length, i);
+                      __func__, pPnoRequest->aNetworks[i].ssId.length, i);
             ret = -EINVAL;
             goto error;
         }
 
-        memcpy(pnoRequest.aNetworks[i].ssId.ssId,
+        memcpy(pPnoRequest->aNetworks[i].ssId.ssId,
                request->match_sets[i].ssid.ssid,
                request->match_sets[i].ssid.ssid_len);
-        pnoRequest.aNetworks[i].authentication = 0; /*eAUTH_TYPE_ANY*/
-        pnoRequest.aNetworks[i].encryption     = 0; /*eED_ANY*/
-        pnoRequest.aNetworks[i].bcastNetwType  = 0; /*eBCAST_UNKNOWN*/
+        pPnoRequest->aNetworks[i].authentication = 0; /*eAUTH_TYPE_ANY*/
+        pPnoRequest->aNetworks[i].encryption     = 0; /*eED_ANY*/
+        pPnoRequest->aNetworks[i].bcastNetwType  = 0; /*eBCAST_UNKNOWN*/
 
         /*Copying list of valid channel into request */
-        memcpy(pnoRequest.aNetworks[i].aChannels, valid_ch, num_ch);
-        pnoRequest.aNetworks[i].ucChannelCount = num_ch;
+        memcpy(pPnoRequest->aNetworks[i].aChannels, valid_ch, num_ch);
+        pPnoRequest->aNetworks[i].ucChannelCount = num_ch;
 
-        pnoRequest.aNetworks[i].rssiThreshold = 0; //Default value
+        pPnoRequest->aNetworks[i].rssiThreshold = 0; //Default value
     }
 
     VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
               "request->ie_len = %d", request->ie_len);
-
-    pnoRequest.p24GProbeTemplate = vos_mem_malloc(SIR_PNO_MAX_PB_REQ_SIZE);
-    if (pnoRequest.p24GProbeTemplate == NULL)
+    if ((0 < request->ie_len) && (NULL != request->ie))
     {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-            FL("failed to allocate memory p24GProbeTemplate %u"),
-                SIR_PNO_MAX_PB_REQ_SIZE);
-        goto error;
-    }
+        pPnoRequest->us24GProbeTemplateLen = request->ie_len;
+        memcpy(&pPnoRequest->p24GProbeTemplate, request->ie,
+                pPnoRequest->us24GProbeTemplateLen);
 
-    pnoRequest.p5GProbeTemplate = vos_mem_malloc(SIR_PNO_MAX_PB_REQ_SIZE);
-    if (pnoRequest.p5GProbeTemplate == NULL)
-    {
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-            FL("failed to allocate memory p5GProbeTemplate %u"),
-                SIR_PNO_MAX_PB_REQ_SIZE);
-        goto error;
-    }
-
-    vos_mem_zero(pnoRequest.p24GProbeTemplate, SIR_PNO_MAX_PB_REQ_SIZE);
-    vos_mem_zero(pnoRequest.p5GProbeTemplate, SIR_PNO_MAX_PB_REQ_SIZE);
-
-    if ((0 < request->ie_len) && (request->ie_len <= SIR_PNO_MAX_PB_REQ_SIZE) &&
-        (NULL != request->ie))
-    {
-        pnoRequest.us24GProbeTemplateLen = request->ie_len;
-        memcpy(pnoRequest.p24GProbeTemplate, request->ie,
-                pnoRequest.us24GProbeTemplateLen);
-
-        pnoRequest.us5GProbeTemplateLen = request->ie_len;
-        memcpy(pnoRequest.p5GProbeTemplate, request->ie,
-                pnoRequest.us5GProbeTemplateLen);
+        pPnoRequest->us5GProbeTemplateLen = request->ie_len;
+        memcpy(&pPnoRequest->p5GProbeTemplate, request->ie,
+                pPnoRequest->us5GProbeTemplateLen);
     }
 
     /* framework provides interval in ms */
     //BEGIN MOT a19110 IKJBMR2-1528 set PNO intervals
-    pnoRequest.scanTimers.ucScanTimersCount = 2;
-    pnoRequest.scanTimers.aTimerValues[0].uTimerRepeat = 7;
-    pnoRequest.scanTimers.aTimerValues[0].uTimerValue = 45;
-    pnoRequest.scanTimers.aTimerValues[1].uTimerRepeat = 0;
-    pnoRequest.scanTimers.aTimerValues[1].uTimerValue = 480;
+    pPnoRequest->scanTimers.ucScanTimersCount = 2;
+    pPnoRequest->scanTimers.aTimerValues[0].uTimerRepeat = 7;
+    pPnoRequest->scanTimers.aTimerValues[0].uTimerValue = 45;
+    pPnoRequest->scanTimers.aTimerValues[1].uTimerRepeat = 0;
+    pPnoRequest->scanTimers.aTimerValues[1].uTimerValue = 480;
     //END IKJBMR2-1528
-    pnoRequest.modePNO = SIR_PNO_MODE_IMMEDIATE;
+    pPnoRequest->modePNO = SIR_PNO_MODE_IMMEDIATE;
 
     INIT_COMPLETION(pAdapter->pno_comp_var);
-    pnoRequest.statusCallback = hdd_cfg80211_sched_scan_start_status_cb;
-    pnoRequest.callbackContext = pAdapter;
+    pPnoRequest->statusCallback = hdd_cfg80211_sched_scan_start_status_cb;
+    pPnoRequest->callbackContext = pAdapter;
     pAdapter->pno_req_status = 0;
     VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
               "SessionId %d, enable %d, modePNO %d, ucScanTimersCount %d",
-              pAdapter->sessionId, pnoRequest.enable, pnoRequest.modePNO,
-                                pnoRequest.scanTimers.ucScanTimersCount);
+              pAdapter->sessionId, pPnoRequest->enable, pPnoRequest->modePNO,
+                                pPnoRequest->scanTimers.ucScanTimersCount);
 
     status = sme_SetPreferredNetworkList(WLAN_HDD_GET_HAL_CTX(pAdapter),
-                              &pnoRequest, pAdapter->sessionId,
+                              pPnoRequest, pAdapter->sessionId,
                               hdd_cfg80211_sched_scan_done_callback, pAdapter);
     if (eHAL_STATUS_SUCCESS != status)
     {
@@ -8290,20 +8247,15 @@ static int wlan_hdd_cfg80211_sched_scan_start(struct wiphy *wiphy,
         VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
                   FL("Timed out waiting for PNO to be Enabled"));
         ret = 0;
+        goto error;
     }
 
     ret = pAdapter->pno_req_status;
-    return ret;
+
 error:
     VOS_TRACE(VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
               FL("PNO scanRequest offloaded ret = %d"), ret);
-    if (pnoRequest.aNetworks)
-        vos_mem_free(pnoRequest.aNetworks);
-    if (pnoRequest.p24GProbeTemplate)
-        vos_mem_free(pnoRequest.p24GProbeTemplate);
-    if (pnoRequest.p5GProbeTemplate)
-        vos_mem_free(pnoRequest.p5GProbeTemplate);
-
+    vos_mem_free(pPnoRequest);
     return ret;
 }
 
@@ -8318,7 +8270,7 @@ static int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
     hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
     hdd_context_t *pHddCtx;
     tHalHandle hHal;
-    tSirPNOScanReq pnoRequest = {0};
+    tpSirPNOScanReq pPnoRequest = NULL;
     int ret = 0;
 
     ENTER();
@@ -8370,10 +8322,19 @@ static int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
         return -EINVAL;
     }
 
-    pnoRequest.enable = 0; /* Disable PNO */
-    pnoRequest.ucNetworksCount = 0;
+    pPnoRequest = (tpSirPNOScanReq) vos_mem_malloc(sizeof (tSirPNOScanReq));
+    if (NULL == pPnoRequest)
+    {
+        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_FATAL,
+                   "%s: vos_mem_malloc failed", __func__);
+        return -ENOMEM;
+    }
 
-    status = sme_SetPreferredNetworkList(hHal, &pnoRequest,
+    memset(pPnoRequest, 0, sizeof (tSirPNOScanReq));
+    pPnoRequest->enable = 0; /* Disable PNO */
+    pPnoRequest->ucNetworksCount = 0;
+
+    status = sme_SetPreferredNetworkList(hHal, pPnoRequest,
                                 pAdapter->sessionId,
                                 NULL, pAdapter);
     if (eHAL_STATUS_SUCCESS != status)
@@ -8383,11 +8344,11 @@ static int wlan_hdd_cfg80211_sched_scan_stop(struct wiphy *wiphy,
         ret = -EINVAL;
         goto error;
     }
-    pHddCtx->isPnoEnable = FALSE;
 
 error:
     VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
                    FL("PNO scan disabled ret = %d"), ret);
+    vos_mem_free(pPnoRequest);
 
     EXIT();
     return ret;
