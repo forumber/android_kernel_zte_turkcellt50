@@ -65,6 +65,8 @@ struct adm_ctl {
 
 	int set_custom_topology;
 	int ec_ref_rx;
+
+	int port_none_topo;
 };
 
 static struct adm_ctl			this_adm;
@@ -430,9 +432,18 @@ int adm_get_params(int port_id, uint32_t module_id, uint32_t param_id,
 		rc = -EINVAL;
 		goto adm_get_param_return;
 	}
-	if (params_data) {
+	if ((params_data) && (ARRAY_SIZE(adm_get_parameters) >=
+		(1+adm_get_parameters[0])) &&
+		(params_length/sizeof(int) >=
+		adm_get_parameters[0])) {
 		for (i = 0; i < adm_get_parameters[0]; i++)
 			params_data[i] = adm_get_parameters[1+i];
+	} else {
+		pr_err("%s: Get param data not copied! get_param array size %zd, index %d, params array size %zd, index %d\n",
+		__func__, ARRAY_SIZE(adm_get_parameters),
+		(1+adm_get_parameters[0]),
+		params_length/sizeof(int),
+		adm_get_parameters[0]);
 	}
 	rc = 0;
 adm_get_param_return:
@@ -621,13 +632,24 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 					data->payload_size))
 				break;
 
-			if (data->payload_size > (4 * sizeof(uint32_t))) {
+			/* payload[3] is the param size, check if payload */
+			/* is big enough and has a valid param size */
+			if ((payload[0] == 0) && (data->payload_size >
+				(4 * sizeof(*payload))) &&
+				(data->payload_size/sizeof(*payload)-4 >=
+				payload[3]) &&
+				(ARRAY_SIZE(adm_get_parameters)-1 >=
+				payload[3])) {
 				adm_get_parameters[0] = payload[3];
-				pr_debug("GET_PP PARAM:received parameter length: %x\n",
-						adm_get_parameters[0]);
+				pr_debug("%s: GET_PP PARAM:received parameter length: 0x%x\n",
+					__func__, adm_get_parameters[0]);
 				/* storing param size then params */
 				for (i = 0; i < payload[3]; i++)
 					adm_get_parameters[1+i] = payload[4+i];
+			} else {
+				adm_get_parameters[0] = -1;
+				pr_err("%s: GET_PP_PARAMS failed, setting size to %d\n",
+					__func__, adm_get_parameters[0]);
 			}
 			atomic_set(&this_adm.copp_stat[index], 1);
 			wake_up(&this_adm.wait[index]);
@@ -1164,6 +1186,12 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 			(open.topology_id == VPM_TX_DM_FLUENCE_COPP_TOPOLOGY))
 				rate = 16000;
 
+		if (this_adm.port_none_topo == port_id &&
+				this_adm.port_none_topo != AFE_PORT_INVALID) {
+			open.topology_id = NULL_COPP_TOPOLOGY;
+			pr_debug("set topology none for port 0X%x\n", port_id);
+		}
+
 		if (perf_mode == ULTRA_LOW_LATENCY_PCM_MODE) {
 			open.topology_id = NULL_COPP_TOPOLOGY;
 			rate = ULL_SUPPORTED_SAMPLE_RATE;
@@ -1609,6 +1637,12 @@ void adm_ec_ref_rx_id(int port_id)
 	pr_debug("%s ec_ref_rx:%d", __func__, this_adm.ec_ref_rx);
 }
 
+void adm_set_none_topo_portid(int port_id)
+{
+	this_adm.port_none_topo = port_id;
+	pr_debug("%s port_none_topo: 0X%x", __func__, this_adm.port_none_topo);
+}
+
 int adm_close(int port_id, int perf_mode)
 {
 	struct apr_hdr close;
@@ -1724,6 +1758,7 @@ static int __init adm_init(void)
 	this_adm.apr = NULL;
 	this_adm.set_custom_topology = 1;
 	this_adm.ec_ref_rx = -1;
+	this_adm.port_none_topo = AFE_PORT_INVALID;
 
 	for (i = 0; i < AFE_MAX_PORTS; i++) {
 		atomic_set(&this_adm.copp_id[i], RESET_COPP_ID);
