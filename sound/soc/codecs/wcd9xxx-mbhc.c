@@ -50,7 +50,7 @@
 				  SND_JACK_BTN_6 | SND_JACK_BTN_7)
 
 #define NUM_DCE_PLUG_DETECT 3
-#define NUM_DCE_PLUG_INS_DETECT 7
+#define NUM_DCE_PLUG_INS_DETECT 10 //lll054850 modify for euro type headset old is 5
 #define NUM_ATTEMPTS_INSERT_DETECT 25
 #define NUM_ATTEMPTS_TO_REPORT 5
 
@@ -63,7 +63,7 @@
 #define BUTTON_MIN 0x8000
 #define STATUS_REL_DETECTION 0x0C
 
-#define HS_DETECT_PLUG_TIME_MS (2 * 1000)
+#define HS_DETECT_PLUG_TIME_MS (5 * 1000)
 #define HS_DETECT_PLUG_INERVAL_MS 100
 #define SWCH_REL_DEBOUNCE_TIME_MS 50
 #define SWCH_IRQ_DEBOUNCE_TIME_US 5000
@@ -99,7 +99,7 @@
  * of plug type with current source
  */
 #define WCD9XXX_CS_MEAS_INVALD_RANGE_LOW_MV 160
-#define WCD9XXX_CS_MEAS_INVALD_RANGE_HIGH_MV 200
+#define WCD9XXX_CS_MEAS_INVALD_RANGE_HIGH_MV 265
 
 /*
  * Threshold used to detect euro headset
@@ -118,10 +118,10 @@
 /* RX_HPH_CNP_WG_TIME increases by 0.24ms */
 #define WCD9XXX_WG_TIME_FACTOR_US	240
 
-#define WCD9XXX_V_CS_HS_MAX 500
+#define WCD9XXX_V_CS_HS_MAX 1550 //lll054850 modify the max 20140321
 #define WCD9XXX_V_CS_NO_MIC 5
 #define WCD9XXX_MB_MEAS_DELTA_MAX_MV 80
-#define WCD9XXX_CS_MEAS_DELTA_MAX_MV 30
+#define WCD9XXX_CS_MEAS_DELTA_MAX_MV 30  //lll054850 modify the max 20140321
 
 static int impedance_detect_en;
 module_param(impedance_detect_en, int,
@@ -184,7 +184,7 @@ static void wcd9xxx_mbhc_calc_thres(struct wcd9xxx_mbhc *mbhc);
 
 static bool wcd9xxx_mbhc_polling(struct wcd9xxx_mbhc *mbhc)
 {
-	return snd_soc_read(mbhc->codec, WCD9XXX_A_CDC_MBHC_EN_CTL) & 0x1;
+	return mbhc->polling_active;
 }
 
 static void wcd9xxx_turn_onoff_override(struct wcd9xxx_mbhc *mbhc, bool on)
@@ -538,13 +538,13 @@ static void wcd9xxx_codec_switch_cfilt_mode(struct wcd9xxx_mbhc *mbhc,
 
 	if (cfilt_mode.cur_mode_val
 			!= cfilt_mode.reg_mode_val) {
-		if (mbhc->polling_active && wcd9xxx_mbhc_polling(mbhc))
+		if (mbhc->polling_active)
 			wcd9xxx_pause_hs_polling(mbhc);
 		snd_soc_update_bits(codec,
 				    mbhc->mbhc_bias_regs.cfilt_ctl,
 					cfilt_mode.reg_mask,
 					cfilt_mode.reg_mode_val);
-		if (mbhc->polling_active && wcd9xxx_mbhc_polling(mbhc))
+		if (mbhc->polling_active)
 			wcd9xxx_start_hs_polling(mbhc);
 		pr_debug("%s: CFILT mode change (%x to %x)\n", __func__,
 			cfilt_mode.cur_mode_val,
@@ -795,7 +795,6 @@ static void wcd9xxx_insert_detect_setup(struct wcd9xxx_mbhc *mbhc, bool ins)
 static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 				enum snd_jack_types jack_type)
 {
-	struct snd_soc_codec *codec = mbhc->codec;
 	WCD9XXX_BCL_ASSERT_LOCKED(mbhc->resmgr);
 
 	pr_debug("%s: enter insertion %d hph_status %x\n",
@@ -846,8 +845,8 @@ static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 			if (mbhc->micbias_enable && mbhc->micbias_enable_cb &&
 			    mbhc->hph_status == SND_JACK_HEADSET) {
 				pr_debug("%s: Disabling micbias\n", __func__);
-				mbhc->micbias_enable = false;
 				mbhc->micbias_enable_cb(mbhc->codec, false);
+				mbhc->micbias_enable = false;
 			}
 
 			pr_debug("%s: Reporting removal (%x)\n",
@@ -856,8 +855,7 @@ static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 			wcd9xxx_jack_report(mbhc, &mbhc->headset_jack,
 					    0, WCD9XXX_JACK_MASK);
 			mbhc->hph_status &= ~(SND_JACK_HEADSET |
-						SND_JACK_LINEOUT|
-						 SND_JACK_UNSUPPORTED);
+						SND_JACK_LINEOUT);
 		}
 		/* Report insertion */
 		mbhc->hph_status |= jack_type;
@@ -881,20 +879,6 @@ static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 
 		if (mbhc->impedance_detect && impedance_detect_en)
 			wcd9xxx_detect_impedance(mbhc, &mbhc->zl, &mbhc->zr);
-
-		/*
-		 * Check if we recieve PA TURN ON event from DAPM
-		 * check PA status and turn it ON.
-		*/
-		pr_debug(" mbhc->event_state = %ld\n", mbhc->event_state);
-		if (test_bit(MBHC_EVENT_PA_HPHL, &mbhc->event_state)) {
-			pr_debug(" check if PA is ON\n");
-			if (!wcd9xxx_is_hph_pa_on(codec)) {
-				pr_debug(" PA is OFF, so turn on PA\n");
-				snd_soc_update_bits(codec,
-					WCD9XXX_A_RX_HPH_CNP_EN, 0x30, 0x30);
-			}
-		}
 
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
@@ -1406,7 +1390,7 @@ wcd9xxx_cs_find_plug_type(struct wcd9xxx_mbhc *mbhc,
 			      WCD9XXX_CS_MEAS_DELTA_MAX_MV;
 
 	for (i = 0, d = dt; i < sz; i++, d++) {
-		if ((i > 2) && !d->mic_bias && !d->swap_gnd &&
+		if ((i > 0) && !d->mic_bias && !d->swap_gnd &&
 		    (d->_type != dprev->_type)) {
 			pr_debug("%s: Invalid, inconsistent types\n", __func__);
 			type = PLUG_TYPE_INVALID;
@@ -2811,14 +2795,11 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 			if (!mbhc->mbhc_cfg->detect_extn_cable &&
 			    retry == NUM_ATTEMPTS_TO_REPORT &&
 			    mbhc->current_plug == PLUG_TYPE_NONE) {
-				WCD9XXX_BCL_LOCK(mbhc->resmgr);
 				wcd9xxx_report_plug(mbhc, 1,
 						    SND_JACK_HEADPHONE);
-				WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 			}
 		} else if (plug_type == PLUG_TYPE_HEADPHONE) {
 			pr_debug("Good headphone detected, continue polling\n");
-			WCD9XXX_BCL_LOCK(mbhc->resmgr);
 			if (mbhc->mbhc_cfg->detect_extn_cable) {
 				if (mbhc->current_plug != plug_type)
 					wcd9xxx_report_plug(mbhc, 1,
@@ -2827,7 +2808,6 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 				wcd9xxx_report_plug(mbhc, 1,
 						    SND_JACK_HEADPHONE);
 			}
-			WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 		} else if (plug_type == PLUG_TYPE_HIGH_HPH) {
 			pr_debug("%s: High HPH detected, continue polling\n",
 				  __func__);
@@ -2926,15 +2906,18 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 	if (wcd9xxx_cancel_btn_work(mbhc))
 		pr_debug("%s: button press is canceled\n", __func__);
 
+	///* cancel detect plug */
+	//wcd9xxx_cancel_hs_detect_plug(mbhc,
+	//			      &mbhc->correct_plug_swch);  //lll054850 modify for hs plugin/out quickly error 20140605
+
 	insert = !wcd9xxx_swch_level_remove(mbhc);
 	pr_debug("%s: Current plug type %d, insert %d\n", __func__,
 		 mbhc->current_plug, insert);
 	if ((mbhc->current_plug == PLUG_TYPE_NONE) && insert) {
 		mbhc->lpi_enabled = false;
 		wmb();
-		/* cancel detect plug */
-		wcd9xxx_cancel_hs_detect_plug(mbhc,
-				      &mbhc->correct_plug_swch);
+                wcd9xxx_cancel_hs_detect_plug(mbhc,
+		                     &mbhc->correct_plug_swch);  //lll054850 modify for hs plugin/out quickly error 20140605
 
 		if ((mbhc->current_plug != PLUG_TYPE_NONE) &&
 		    !(snd_soc_read(codec, WCD9XXX_A_MBHC_INSERT_DETECT) &
@@ -2949,9 +2932,10 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 	} else if ((mbhc->current_plug != PLUG_TYPE_NONE) && !insert) {
 		mbhc->lpi_enabled = false;
 		wmb();
-		/* cancel detect plug */
+		
+                /* cancel detect plug */
 		wcd9xxx_cancel_hs_detect_plug(mbhc,
-				      &mbhc->correct_plug_swch);
+                                  &mbhc->correct_plug_swch);  //lll054850 modify for hs plugin/out quickly error 20140605
 
 		if (mbhc->current_plug == PLUG_TYPE_HEADPHONE) {
 			wcd9xxx_report_plug(mbhc, 0, SND_JACK_HEADPHONE);
@@ -3182,8 +3166,7 @@ void wcd9xxx_update_z(struct wcd9xxx_mbhc *mbhc)
  * wcd9xxx_update_rel_threshold : update mbhc release upper bound threshold
  *				  to ceilmv + buffer
  */
-static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv,
-					bool vddio)
+static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv)
 {
 	u16 v_brh, v_b1_hu;
 	int mv;
@@ -3193,8 +3176,6 @@ static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv,
 
 	btn_det = WCD9XXX_MBHC_CAL_BTN_DET_PTR(calibration);
 	mv = ceilmv + btn_det->v_btn_press_delta_cic;
-	if (vddio)
-		mv = scale_v_micb_vddio(mbhc, mv, true);
 	pr_debug("%s: reprogram vb1hu/vbrh to %dmv\n", __func__, mv);
 
 	if (mbhc->mbhc_state != MBHC_STATE_POTENTIAL_RECOVERY) {
@@ -3395,7 +3376,7 @@ irqreturn_t wcd9xxx_dce_handler(int irq, void *data)
 						       MBHC_BTN_DET_V_BTN_HIGH);
 		WARN_ON(btn >= btn_det->num_btn);
 		/* reprogram release threshold to catch voltage ramp up early */
-		wcd9xxx_update_rel_threshold(mbhc, v_btn_high[btn], vddio);
+		wcd9xxx_update_rel_threshold(mbhc, v_btn_high[btn]);
 
 		mask = wcd9xxx_get_button_mask(btn);
 		mbhc->buttons_pressed |= mask;

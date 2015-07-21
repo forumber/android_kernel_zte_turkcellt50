@@ -22,6 +22,7 @@
 #include <linux/input.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/proc_fs.h>
 #include <sound/jack.h>
 #include <sound/core.h>
 
@@ -36,6 +37,22 @@ static int jack_switch_types[] = {
 	SW_HPHR_OVERCURRENT,
 	SW_UNSUPPORT_INSERT,
 };
+
+static int hs_type = 0;
+
+static int hs_read(char *page, char **start, off_t off, int count, int *eof, void *data)
+{
+	int ret;
+
+	if (off > 0) {
+		ret = 0;
+	} else {
+		ret = sprintf(page, "%d\n", hs_type);
+		//printk(KERN_ERR "hs_type=%d \n", hs_type);
+	}
+
+    return ret;
+}
 
 static int snd_jack_dev_free(struct snd_device *device)
 {
@@ -54,6 +71,7 @@ static int snd_jack_dev_free(struct snd_device *device)
 	kfree(jack->id);
 	kfree(jack);
 
+	remove_proc_entry("hs", NULL);
 	return 0;
 }
 
@@ -61,6 +79,7 @@ static int snd_jack_dev_register(struct snd_device *device)
 {
 	struct snd_jack *jack = device->device_data;
 	struct snd_card *card = device->card;
+	struct proc_dir_entry *proc_hs_type;
 	int err, i;
 
 	snprintf(jack->name, sizeof(jack->name), "%s %s",
@@ -87,6 +106,11 @@ static int snd_jack_dev_register(struct snd_device *device)
 	err = input_register_device(jack->input_dev);
 	if (err == 0)
 		jack->registered = 1;
+
+	proc_hs_type = create_proc_read_entry("hs", S_IRUGO, NULL, hs_read, NULL);
+	if (!proc_hs_type) {
+		printk(KERN_ERR"hs: unable to register '/proc/hs' \n");
+	}
 
 	return err;
 }
@@ -230,10 +254,12 @@ void snd_jack_report(struct snd_jack *jack, int status)
 
 	for (i = 0; i < ARRAY_SIZE(jack_switch_types); i++) {
 		int testbit = 1 << i;
-		if (jack->type & testbit)
+		if (jack->type & testbit){
 			input_report_switch(jack->input_dev,
 					    jack_switch_types[i],
 					    status & testbit);
+			hs_type = status;
+		}
 	}
 
 	input_sync(jack->input_dev);

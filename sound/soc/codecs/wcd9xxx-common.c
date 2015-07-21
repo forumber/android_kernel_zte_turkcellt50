@@ -829,6 +829,7 @@ static void wcd9xxx_clsh_state_ear(struct snd_soc_codec *codec,
 		wcd9xxx_set_fclk_put_ncp(codec, clsh_d, NCP_FCLK_LEVEL_8);
 		wcd9xxx_enable_buck(codec, clsh_d, false);
 		wcd9xxx_clsh_comp_req(codec, clsh_d, CLSH_COMPUTE_EAR, true);
+		wcd9xxx_enable_anc_delay(codec, false);  //lll054850 modify for a60 speaker and hphr error 20140425
 		wcd9xxx_chargepump_request(codec, false);
 		wcd9xxx_enable_clsh_block(codec, clsh_d, false);
 	}
@@ -856,6 +857,7 @@ static void wcd9xxx_clsh_state_hph_l(struct snd_soc_codec *codec,
 		wcd9xxx_set_fclk_put_ncp(codec, clsh_d, NCP_FCLK_LEVEL_8);
 		wcd9xxx_enable_buck(codec, clsh_d, false);
 		wcd9xxx_clsh_comp_req(codec, clsh_d, CLSH_COMPUTE_HPH_L, false);
+		wcd9xxx_enable_anc_delay(codec, false);  //lll054850 modify for a60 speaker and hphr error 20140425
 		wcd9xxx_chargepump_request(codec, false);
 		wcd9xxx_enable_clsh_block(codec, clsh_d, false);
 	}
@@ -883,6 +885,7 @@ static void wcd9xxx_clsh_state_hph_r(struct snd_soc_codec *codec,
 		wcd9xxx_set_fclk_put_ncp(codec, clsh_d, NCP_FCLK_LEVEL_8);
 		wcd9xxx_enable_buck(codec, clsh_d, false);
 		wcd9xxx_clsh_comp_req(codec, clsh_d, CLSH_COMPUTE_HPH_R, false);
+		wcd9xxx_enable_anc_delay(codec, false);  //lll054850 modify for a60 speaker and hphr error 20140425
 		wcd9xxx_chargepump_request(codec, false);
 		wcd9xxx_enable_clsh_block(codec, clsh_d, false);
 	}
