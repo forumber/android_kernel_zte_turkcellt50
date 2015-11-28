@@ -70,6 +70,15 @@ struct v4l2_subdev_info {
 
 struct msm_camera_sensor_board_info {
 	const char *sensor_name;
+/*
+  * camera sensor module compatile
+  *
+  * by ZTE_YCM_20140509 yi.changming
+  */
+// --->
+	const char *module_name;
+	const char *default_module_name;
+// <---
 	struct msm_camera_slave_info *slave_info;
 	struct msm_camera_csi_lane_params *csi_lane_params;
 	struct camera_vreg_t *cam_vreg;

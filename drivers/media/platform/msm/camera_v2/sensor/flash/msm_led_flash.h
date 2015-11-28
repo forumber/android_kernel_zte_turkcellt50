@@ -43,6 +43,15 @@ struct msm_led_flash_reg_t {
 	struct msm_camera_i2c_reg_setting *high_setting;
 };
 
+/*added by caidezun for emode 20140310*/
+struct msm_flash_board_info_t {
+	const char *flash_name;
+	struct msm_flash_slave_info_t *slave_info;
+	struct camera_vreg_t *vreg_conf;
+	int32_t num_vreg;
+	struct msm_flash_gpio_conf_t *gpio_conf;
+};
+
 struct msm_led_flash_ctrl_t {
 	struct msm_camera_i2c_client *flash_i2c_client;
 	struct msm_sd_subdev msm_sd;
@@ -62,6 +71,9 @@ struct msm_led_flash_ctrl_t {
 	uint32_t num_sources;
 	enum msm_camera_device_type_t flash_device_type;
 	uint32_t subdev_id;
+
+/*added by caidezun for emode 20140310*/
+	struct msm_flash_board_info_t board_info;
 };
 
 int msm_flash_i2c_probe(struct i2c_client *client,

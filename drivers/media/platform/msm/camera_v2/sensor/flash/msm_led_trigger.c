@@ -15,6 +15,9 @@
 
 #include <linux/module.h>
 #include "msm_led_flash.h"
+#if defined(CONFIG_MSM_CAMERA_EMODE)
+#include <linux/sysdev.h>
+#endif /* CONFIG_MSM_CAMERA_EMODE */
 
 #define FLASH_NAME "camera-led-flash"
 
@@ -31,6 +34,144 @@ extern int32_t msm_led_torch_create_classdev(
 
 static enum flash_type flashtype;
 static struct msm_led_flash_ctrl_t fctrl;
+
+#if defined(CONFIG_MSM_CAMERA_EMODE)
+
+static struct sysdev_class msm_led_trigger_sysdev_class = {
+	.name = "led-flash"
+};
+
+static struct sys_device msm_led_trigger_sysdev;
+
+static ssize_t store_torch(struct sys_device *dev, struct sysdev_attribute *attr, const char *buf, size_t buf_sz);
+static ssize_t store_flash(struct sys_device *dev, struct sysdev_attribute *attr, const char *buf, size_t buf_sz);
+int32_t msm_led_trigger_register_sysdev(struct msm_led_flash_ctrl_t *fctrl);
+
+static ssize_t store_torch(struct sys_device *dev, struct sysdev_attribute *attr, const char *buf, size_t buf_sz)
+{
+	int32_t enable = 0,i;
+
+	CDBG("%s: E\n", __func__);
+
+	sscanf(buf, "%d", &enable);
+
+	if (enable) {
+		if (fctrl.torch_trigger) {
+		led_trigger_event(fctrl.torch_trigger,fctrl.torch_op_current);	
+		}	
+	} else {
+		for (i = 0; i < fctrl.num_sources; i++)
+			if (fctrl.flash_trigger[i])
+				led_trigger_event(fctrl.flash_trigger[i], 0);
+		if (fctrl.torch_trigger)
+			led_trigger_event(fctrl.torch_trigger, 0);		
+	}
+
+	CDBG("%s: X\n", __func__);
+
+	return buf_sz;
+}
+static SYSDEV_ATTR(torch, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, NULL, store_torch);
+
+static ssize_t store_flash(struct sys_device *dev, struct sysdev_attribute *attr, const char *buf, size_t buf_sz)
+{
+	int32_t enable = 0,i;
+
+	CDBG("%s: E\n", __func__);
+
+	sscanf(buf, "%d", &enable);
+
+	if (enable) {
+		if (fctrl.torch_trigger)
+			led_trigger_event(fctrl.torch_trigger, 0);
+		for (i = 0; i < fctrl.num_sources; i++)
+			if (fctrl.flash_trigger[i]) {
+				led_trigger_event(fctrl.flash_trigger[i],fctrl.flash_op_current[i]);
+			}
+	} else {
+		for (i = 0; i < fctrl.num_sources; i++)
+			if (fctrl.flash_trigger[i])
+				led_trigger_event(fctrl.flash_trigger[i], 0);
+		if (fctrl.torch_trigger)
+			led_trigger_event(fctrl.torch_trigger, 0);	
+	}
+
+	CDBG("%s: X\n", __func__);
+
+	return buf_sz;
+}
+static SYSDEV_ATTR(flash, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH, NULL, store_flash);
+
+static ssize_t name_read(struct sys_device *dev, struct sysdev_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+
+	CDBG("%s: E\n", __func__);
+
+	ret = snprintf(buf,PAGE_SIZE,"%s\n",fctrl.board_info.flash_name);
+
+	CDBG("%s: X\n", __func__);
+
+	return ret;
+}
+static SYSDEV_ATTR(name, S_IRUGO , name_read, NULL);
+
+static struct sysdev_attribute *msm_led_trigger_sysdev_attrs[] = {
+	&attr_name,
+	&attr_torch,
+	&attr_flash,
+};
+
+/*
+ * MSM LED Trigger Sys Device Register
+ *
+ * 1. Torch Mode
+ *     enable: $ echo "1" > /sys/devices/system/led-flash/led-flash0/torch
+ *    disable: $ echo "0" > /sys/devices/system/led-flash/led-flash0/torch
+ *
+ * 2. Flash Mode
+ *     enable: $ echo "1" > /sys/devices/system/led-flash/led-flash0/flash
+ *    disable: $ echo "0" > /sys/devices/system/led-flash/led-flash0/flash
+ */
+int32_t msm_led_trigger_register_sysdev(struct msm_led_flash_ctrl_t *fctrl)
+{
+	int32_t i, rc;
+
+	rc = sysdev_class_register(&msm_led_trigger_sysdev_class);
+	if (rc) {
+			return rc;
+	}
+
+	msm_led_trigger_sysdev.id = 0;
+	msm_led_trigger_sysdev.cls = &msm_led_trigger_sysdev_class;
+	rc = sysdev_register(&msm_led_trigger_sysdev);
+	if (rc) {
+		sysdev_class_unregister(&msm_led_trigger_sysdev_class);
+		return rc;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(msm_led_trigger_sysdev_attrs); ++i) {
+		rc = sysdev_create_file(&msm_led_trigger_sysdev, msm_led_trigger_sysdev_attrs[i]);
+		if (rc) {
+			goto msm_led_trigger_register_sysdev_failed;
+		}
+	}
+
+	return 0;
+
+msm_led_trigger_register_sysdev_failed:
+
+	while (--i >= 0) sysdev_remove_file(&msm_led_trigger_sysdev, msm_led_trigger_sysdev_attrs[i]);
+
+	sysdev_unregister(&msm_led_trigger_sysdev);
+	sysdev_class_unregister(&msm_led_trigger_sysdev_class);
+
+	return rc;
+}
+#endif /* CONFIG_MSM_CAMERA_EMODE */
+
+
+
 
 static int32_t msm_led_trigger_get_subdev_id(struct msm_led_flash_ctrl_t *fctrl,
 	void *arg)
@@ -125,6 +266,21 @@ static const struct of_device_id msm_led_trigger_dt_match[] = {
 	{}
 };
 
+/*added by caidezun to close the led-flash when powerdown begin 20140319*/
+static void qcom_flash_shutdown(struct platform_device *pdev)
+{
+	int32_t i=0;
+
+	pr_err("%s: E\n", __func__);
+
+	for (i = 0; i < fctrl.num_sources; i++)
+		if (fctrl.flash_trigger[i])
+			led_trigger_event(fctrl.flash_trigger[i], 0);
+	if (fctrl.torch_trigger)
+		led_trigger_event(fctrl.torch_trigger, 0);
+}
+/*added by caidezun to close the led-flash when powerdown end 20140319*/
+
 MODULE_DEVICE_TABLE(of, msm_led_trigger_dt_match);
 
 static struct platform_driver msm_led_trigger_driver = {
@@ -133,6 +289,8 @@ static struct platform_driver msm_led_trigger_driver = {
 		.owner = THIS_MODULE,
 		.of_match_table = msm_led_trigger_dt_match,
 	},
+	/*added by caidezun to close the led-flash when powerdown 20140319*/
+	.shutdown = qcom_flash_shutdown,
 };
 
 static int32_t msm_led_trigger_probe(struct platform_device *pdev)
@@ -239,7 +397,13 @@ static int32_t msm_led_trigger_probe(struct platform_device *pdev)
 
 			CDBG("default trigger %s\n",
 				fctrl.torch_trigger_name);
-
+			
+#if defined(CONFIG_MSM_CAMERA_EMODE)			
+			rc = of_property_read_string(of_node, "qcom,flash-name", &fctrl.board_info.flash_name);
+			if (rc < 0) {
+				pr_err("%s: failed %d\n", __func__, __LINE__);
+			}
+#endif	
 			if (flashtype == GPIO_FLASH) {
 				/* use fake current */
 				fctrl.torch_op_current = LED_FULL;
@@ -278,6 +442,12 @@ torch_failed:
 	if (!rc)
 		msm_led_torch_create_classdev(pdev, &fctrl);
 
+#if defined(CONFIG_MSM_CAMERA_EMODE)
+	if (!rc)
+		(void)msm_led_trigger_register_sysdev(&fctrl);
+	CDBG("exit\n");
+#endif /* CONFIG_MSM_CAMERA_EMODE */
+	
 	return rc;
 }
 

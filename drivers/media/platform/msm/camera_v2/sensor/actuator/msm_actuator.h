@@ -19,6 +19,14 @@
 #include <media/msmb_camera.h>
 #include "msm_camera_i2c.h"
 
+/*
+ * Support for camera actuator by ZTE_BOOT_JIA_20130729 jia.jia
+ */
+#if 1
+#include <linux/module.h>
+#include <linux/platform_device.h>
+#include "msm_sd.h"
+#endif
 #define DEFINE_MSM_MUTEX(mutexname) \
 	static struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
 

@@ -186,8 +186,18 @@ static int camera_v4l2_s_ctrl(struct file *filep, void *fh,
 		ctrl->value, &event);
 
 		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
+  /*
+    * Add set_Parm fail patch and debug log by caidezun 20140731
+    */
+    #if 0
 		if (rc < 0)
 			return rc;
+    #else
+		if (rc < 0){
+          pr_err("%s: rc=%d.\n", __func__, rc);
+			return rc;
+       }
+    #endif
 		event_data = (struct msm_v4l2_event_data *)event.u.data;
 		ctrl->value = event_data->ret_value;
 		rc = camera_check_event_status(&event);
@@ -345,20 +355,17 @@ static int camera_v4l2_s_fmt_vid_cap_mplane(struct file *filep, void *fh,
 
 		rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
 		if (rc < 0)
-			goto set_fmt_fail;
+			return rc;
 
 		rc = camera_check_event_status(&event);
 		if (rc < 0)
-			goto set_fmt_fail;
+			return rc;
+
 		sp->is_vb2_valid = 1;
 	}
 
 	return rc;
 
-set_fmt_fail:
-	kzfree(sp->vb2_q.drv_priv);
-	sp->vb2_q.drv_priv = NULL;
-	return rc;
 }
 
 static int camera_v4l2_try_fmt_vid_cap_mplane(struct file *filep, void *fh,
