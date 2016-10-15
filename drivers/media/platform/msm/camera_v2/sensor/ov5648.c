@@ -19,27 +19,15 @@ static struct msm_sensor_ctrl_t ov5648_s_ctrl;
 
 static struct msm_sensor_power_setting ov5648_power_setting[] = {
 	{
-		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_STANDBY,
-		.config_val = GPIO_OUT_LOW,
-		.delay = 1,
-	},
-	{
-		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_RESET,
-		.config_val = GPIO_OUT_LOW,
-		.delay = 1,
-	},
-	{
-		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_VIO,
-		.config_val = GPIO_OUT_HIGH,
+		.seq_type = SENSOR_VREG,
+		.seq_val = CAM_VIO,
+		.config_val = 0,
 		.delay = 0,
 	},
 	{
 		.seq_type = SENSOR_GPIO,
-		.seq_val = SENSOR_GPIO_VANA,
-		.config_val = GPIO_OUT_HIGH,
+		.seq_val = SENSOR_GPIO_VDIG,
+		.config_val = GPIO_OUT_LOW,
 		.delay = 5,
 	},
 	{
@@ -49,10 +37,28 @@ static struct msm_sensor_power_setting ov5648_power_setting[] = {
 		.delay = 5,
 	},
 	{
+		.seq_type = SENSOR_VREG,
+		.seq_val = CAM_VANA,
+		.config_val = 0,
+		.delay = 5,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_STANDBY,
+		.config_val = GPIO_OUT_LOW,
+		.delay = 5,
+	},
+	{
 		.seq_type = SENSOR_GPIO,
 		.seq_val = SENSOR_GPIO_STANDBY,
 		.config_val = GPIO_OUT_HIGH,
 		.delay = 10,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_RESET,
+		.config_val = GPIO_OUT_LOW,
+		.delay = 5,
 	},
 	{
 		.seq_type = SENSOR_GPIO,
@@ -116,7 +122,6 @@ static struct msm_sensor_ctrl_t ov5648_s_ctrl = {
 	.sensor_v4l2_subdev_info = ov5648_subdev_info,
 	.sensor_v4l2_subdev_info_size =
 			ARRAY_SIZE(ov5648_subdev_info),
-	.msm_sensor_reg_default_data_type=MSM_CAMERA_I2C_BYTE_DATA,
 };
 
 static const struct of_device_id ov5648_dt_match[] = {

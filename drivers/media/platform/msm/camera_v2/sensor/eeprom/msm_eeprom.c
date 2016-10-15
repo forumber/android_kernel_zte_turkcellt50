@@ -24,14 +24,10 @@
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 #endif
 
-/*add for ar0542 eeprom by caidezun 20140326*/
-#if defined(CONFIG_AR0542)
-extern uint8_t ar0542_eeprom_buffer[12];
-#define AR0542_EEPROM
-#endif
-
 DEFINE_MSM_MUTEX(msm_eeprom_mutex);
-
+#if defined(CONFIG_AR0542)||defined (CONFIG_T4K35)||defined (CONFIG_OV8835)
+extern uint8_t eeprom_buffer[12];
+#endif
 int32_t msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 	void __user *argp)
 {
@@ -55,14 +51,6 @@ int32_t msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		break;
 	case CFG_EEPROM_READ_CAL_DATA:
 		if (cdata->cfg.read_data.num_bytes <= e_ctrl->num_bytes) {
-
-#if defined AR0542_EEPROM
-
-			//If ar0542 is used ,copy the eeprom from sensor otp info here.
-			memcpy(e_ctrl->memory_data, &ar0542_eeprom_buffer[0], 12);
-
-#endif
-
 			CDBG("%s E CFG_EEPROM_READ_CAL_DATA\n", __func__);
 			rc = copy_to_user(cdata->cfg.read_data.dbuffer,
 			e_ctrl->memory_data,
@@ -801,11 +789,7 @@ static int32_t msm_eeprom_spi_remove(struct spi_device *sdev)
 static int32_t msm_eeprom_platform_probe(struct platform_device *pdev)
 {
 	int32_t rc = 0;
-#if defined AR0542_EEPROM
-	//not used
-#else
 	int32_t j = 0;
-#endif
 	uint32_t temp;
 
 	struct msm_camera_cci_client *cci_client = NULL;
@@ -902,12 +886,6 @@ static int32_t msm_eeprom_platform_probe(struct platform_device *pdev)
 		goto board_free;
 	}
 
-#if defined AR0542_EEPROM
-        //If ar0542 is used ,here just alloc memory.We will copy the eeprom from sensor otp info later.
-        rc = msm_eeprom_alloc_memory_map(e_ctrl, of_node);
-	if (rc)
-		goto board_free;
-#else
 	rc = msm_eeprom_get_dt_data(e_ctrl);
 	if (rc)
 		goto board_free;
@@ -922,12 +900,16 @@ static int32_t msm_eeprom_platform_probe(struct platform_device *pdev)
 		pr_err("failed rc %d\n", rc);
 		goto memdata_free;
 	}
+#if defined(CONFIG_AR0542)||defined (CONFIG_T4K35)||defined (CONFIG_OV8835)
+	memcpy(e_ctrl->memory_data, &eeprom_buffer[0], 12);
+#else
 	rc = read_eeprom_memory(e_ctrl);
 	if (rc < 0) {
 		pr_err("%s read_eeprom_memory failed\n", __func__);
 		goto power_down;
 	}
 		pr_err("%s line %d\n", __func__, __LINE__);
+#endif
 	for (j = 0; j < e_ctrl->num_bytes; j++)
 		CDBG("memory_data[%d] = 0x%X\n", j, e_ctrl->memory_data[j]);
 
@@ -937,8 +919,6 @@ static int32_t msm_eeprom_platform_probe(struct platform_device *pdev)
 		pr_err("failed rc %d\n", rc);
 		goto memdata_free;
 	}
-#endif
-
 	v4l2_subdev_init(&e_ctrl->msm_sd.sd,
 		e_ctrl->eeprom_v4l2_subdev_ops);
 	v4l2_set_subdevdata(&e_ctrl->msm_sd.sd, e_ctrl);
@@ -956,17 +936,15 @@ static int32_t msm_eeprom_platform_probe(struct platform_device *pdev)
 	e_ctrl->is_supported = 1;
 	CDBG("%s X\n", __func__);
 	return rc;
-
-#if defined AR0542_EEPROM
-//not used
+#if defined(CONFIG_AR0542)||defined (CONFIG_T4K35)||defined (CONFIG_OV8835)
 #else
 power_down:
 	msm_camera_power_down(power_info, e_ctrl->eeprom_device_type,
 		&e_ctrl->i2c_client);
+#endif
 memdata_free:
 	kfree(e_ctrl->memory_data);
 	kfree(eb_info->eeprom_map);
-#endif
 board_free:
 	kfree(e_ctrl->eboard_info);
 cciclient_free:

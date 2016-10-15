@@ -20,6 +20,7 @@
 #include <linux/spinlock.h>
 #include <linux/proc_fs.h>
 #include <linux/atomic.h>
+#include <linux/wait.h>
 #include <linux/videodev2.h>
 #include <linux/msm_ion.h>
 #include <linux/iommu.h>
@@ -400,15 +401,8 @@ int msm_create_command_ack_q(unsigned int session_id, unsigned int stream_id)
 	}
 
 	msm_init_queue(&cmd_ack->command_q);
-
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 1
-   pr_err("%s: init command_q. \n", __func__);
-#endif
 	INIT_LIST_HEAD(&cmd_ack->list);
-	init_completion(&cmd_ack->wait_complete);
+	init_waitqueue_head(&cmd_ack->wait);
 	cmd_ack->stream_id = stream_id;
 
 	msm_enqueue(&session->command_ack_q, &cmd_ack->list);
@@ -488,13 +482,6 @@ static inline int __msm_remove_session_cmd_ack_q(void *d1, void *d2)
 		return 0;
 
 	msm_queue_drain(&cmd_ack->command_q, struct msm_command, list);
-
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 1
-   pr_err("%s: empty command_q. \n", __func__);
-#endif
 
 	return 0;
 }
@@ -598,12 +585,6 @@ static long msm_private_ioctl(struct file *file, void *fh,
 		ret_cmd = kzalloc(sizeof(*ret_cmd), GFP_KERNEL);
 		if (!ret_cmd) {
 			rc = -ENOMEM;
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-    #if 0
-          pr_err("%s: alloc failed, stream_id=%d\n",__func__, stream_id);
-    #endif
 			break;
 		}
 
@@ -613,12 +594,6 @@ static long msm_private_ioctl(struct file *file, void *fh,
 			&stream_id);
 		if (WARN_ON(!cmd_ack)) {
 			kzfree(ret_cmd);
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-    #if 0
-          pr_err("%s:not find cmd ack,stream_id=%d.\n",__func__, stream_id);
-    #endif
 			rc = -EFAULT;
 			break;
 		}
@@ -627,14 +602,7 @@ static long msm_private_ioctl(struct file *file, void *fh,
 		   spin_flags);
 		ret_cmd->event = *(struct v4l2_event *)arg;
 		msm_enqueue(&cmd_ack->command_q, &ret_cmd->list);
-		complete(&cmd_ack->wait_complete);
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-    #if 0
-       pr_err("%s: queue cmd ack, len=%d, stream_id=%d\n",__func__, cmd_ack->command_q.len, stream_id);
-    #endif
-
+		wake_up(&cmd_ack->wait);
 		spin_unlock_irqrestore(&(session->command_ack_q.lock),
 		   spin_flags);
 	}
@@ -689,22 +657,6 @@ static unsigned int msm_poll(struct file *f,
 	return rc;
 }
 
-/*
-  * Add set_Parm fail patch and debug log by caidezun 20140731
-  */
-static void msm_print_event_error(struct v4l2_event *event)
-{
-	struct msm_v4l2_event_data *event_data =
-		(struct msm_v4l2_event_data *)&event->u.data[0];
-
-	pr_err("Evt_type=%x Evt_id=%d Evt_cmd=%x\n", event->type,
-		event->id, event_data->command);
-	pr_err("Evt_session_id=%d Evt_stream_id=%d Evt_arg=%d\n",
-		event_data->session_id, event_data->stream_id,
-		event_data->arg_value);
-}
-
-
 /* something seriously wrong if msm_close is triggered
  *   !!! user space imaging server is shutdown !!!
  */
@@ -753,12 +705,6 @@ int msm_post_event(struct v4l2_event *event, int timeout)
 		return -EIO;
 	}
 
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-	/*re-init wait_complete */
-	INIT_COMPLETION(cmd_ack->wait_complete);
-
 	v4l2_event_queue(vdev, event);
 
 	if (timeout < 0) {
@@ -768,53 +714,27 @@ int msm_post_event(struct v4l2_event *event, int timeout)
 		return rc;
 	}
 
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 0
-	if (list_empty_careful(&cmd_ack->command_q.list)) {
 	/* should wait on session based condition */
-	rc = wait_for_completion_timeout(&cmd_ack->wait_complete,
+	do {
+		rc = wait_event_interruptible_timeout(cmd_ack->wait,
+			!list_empty_careful(&cmd_ack->command_q.list),
 			msecs_to_jiffies(timeout));
-	}
-#else
-   pr_err("%s: wait for event=%d, timeout=%d, stream_id=%d. \n",__func__, event->id, timeout, stream_id);
-	/* should wait on session based condition */
-	rc = wait_for_completion_timeout(&cmd_ack->wait_complete,
-			msecs_to_jiffies(timeout));
-#endif
+		if (rc != -ERESTARTSYS)
+			break;
+	} while (1);
 
 	if (list_empty_careful(&cmd_ack->command_q.list)) {
 		if (!rc) {
 			pr_err("%s: Timed out\n", __func__);
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 1
-          msm_print_event_error(event);
-#endif
 			rc = -ETIMEDOUT;
-		} else {
-			pr_err("%s: Error: No timeout but list empty!",
-					__func__);
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 1
-          msm_print_event_error(event);
-#endif
+		}
+		if (rc < 0) {
+			pr_err("%s: rc = %d\n", __func__, rc);
 			mutex_unlock(&session->lock);
-			return -EINVAL;
+			return rc;
 		}
 	}
 
-  /*
-    * Add set_Parm fail patch and debug log by caidezun 20140731
-    */
-#if 0
-	/*re-init wait_complete */
-	INIT_COMPLETION(cmd_ack->wait_complete);
-#endif
 	cmd = msm_dequeue(&cmd_ack->command_q,
 		struct msm_command, list);
 	if (!cmd) {

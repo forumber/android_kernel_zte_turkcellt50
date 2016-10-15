@@ -48,6 +48,7 @@ struct msm_sensor_fn_t {
 		(struct msm_sensor_ctrl_t *);
 	int (*sensor_power_up) (struct msm_sensor_ctrl_t *);
 	int32_t (*sensor_match_id)(struct msm_sensor_ctrl_t *s_ctrl);
+	int (*sensor_set_opt_setting) (struct msm_sensor_ctrl_t *);
 };
 
 struct msm_sensor_ctrl_t {
@@ -73,34 +74,29 @@ struct msm_sensor_ctrl_t {
 	uint16_t clk_info_size;
 	void *misc_regulator;
 	enum msm_sensor_state_t sensor_state;
-	void (*load_otp_parm) (struct msm_sensor_ctrl_t *);
-	void (*sensor_otp_func) (struct msm_sensor_ctrl_t *);
-/*
-  * camera sensor module compatile
-  *
-  * by ZTE_YCM_20140509 yi.changming
-  */
-// --->
-#if 0
-	char  module_name[32];
-#else
-	const char  *module_name;
-#endif
-// <---
-	/*add by wuxiaoliang for mipi test interface*/
-	enum msm_camera_i2c_data_type msm_sensor_reg_default_data_type;
-/*
-  * modfiy code  for platform standby mode
-  *
-  * by ZTE_YCM_20140506 yi.changming
-  */
-// --->
-	int32_t (*sensor_power_down) (struct msm_sensor_ctrl_t *);
-	int32_t (*sensor_power_on) (struct msm_sensor_ctrl_t *);
-	int32_t (*sensor_init_reg) (struct msm_sensor_ctrl_t *);
-// <---
+	uint16_t af_otp_macro;
+	uint16_t af_otp_inifity;
 };
-
+struct otp_struct {
+int module_id;
+int lens_id;
+int production_year;
+int production_month;
+int production_day;
+int rg_ratio;
+int bg_ratio;
+int light_rg;
+int light_bg;
+int user_data[5];
+int lenc[62];
+int VCM_start;
+int VCM_end;
+uint32_t final_R_gain;
+uint32_t final_G_gain;
+uint32_t final_B_gain;
+int wbwritten;
+int lencwritten;
+};
 int32_t msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 			void __user *argp);
 
@@ -108,10 +104,23 @@ int32_t msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);
 
 int32_t msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl);
 
+int32_t front_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);
+
+int32_t front_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl);
+
+int32_t sp0a28_power_down(struct msm_sensor_ctrl_t *s_ctrl);
+
+int32_t sp0a28_msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl);
+
 int32_t msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl);
 
 int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 	void *data);
+int32_t ov8835_msm_sensor_otp_probe(struct msm_sensor_ctrl_t *s_ctrl);
+#if defined (CONFIG_IMX135)
+int32_t imx135_msm_sensor_otp_probe(struct msm_sensor_ctrl_t *s_ctrl);
+#endif
+int32_t t4k35_otp_init_setting(struct msm_sensor_ctrl_t *s_ctrl);
 
 int32_t msm_sensor_i2c_probe(struct i2c_client *client,
 	const struct i2c_device_id *id, struct msm_sensor_ctrl_t *s_ctrl);
@@ -129,9 +138,4 @@ int32_t msm_sensor_get_dt_gpio_set_tbl(struct device_node *of_node,
 int32_t msm_sensor_init_gpio_pin_tbl(struct device_node *of_node,
 	struct msm_camera_gpio_conf *gconf, uint16_t *gpio_array,
 	uint16_t gpio_array_size);
-
-/*
-* add by wuxiaoliang from 8930 for mipi test interface
-*/
-int32_t msm_sensor_enable_debugfs(struct msm_sensor_ctrl_t *s_ctrl);
 #endif
