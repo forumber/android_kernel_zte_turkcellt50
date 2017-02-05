@@ -1586,8 +1586,6 @@ void writeback_set_ratelimit(void)
 	unsigned long background_thresh;
 	unsigned long dirty_thresh;
 	global_dirty_limits(&background_thresh, &dirty_thresh);
-    //ZTE_MODIFY merge patch 68809c7108b9a75baf2a888b1c19ce1a4680f600 for Camera & Power 
-    global_dirty_limit = dirty_thresh;
 	ratelimit_pages = dirty_thresh / (num_online_cpus() * 32);
 	if (ratelimit_pages < 16)
 		ratelimit_pages = 16;

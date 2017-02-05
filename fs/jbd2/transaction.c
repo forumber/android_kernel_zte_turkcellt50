@@ -30,8 +30,6 @@
 #include <linux/bug.h>
 #include <linux/module.h>
 
-#include <trace/events/jbd2.h>
-
 static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh);
 static void __jbd2_journal_unfile_buffer(struct journal_head *jh);
 
@@ -308,8 +306,6 @@ repeat:
 	 */
 	update_t_max_wait(transaction, ts);
 	handle->h_transaction = transaction;
-	handle->h_requested_credits = nblocks;
-	handle->h_start_jiffies = jiffies;
 	atomic_inc(&transaction->t_updates);
 	atomic_inc(&transaction->t_handle_count);
 	jbd_debug(4, "Handle %p given %d credits (total %d, free %d)\n",
@@ -356,8 +352,7 @@ static handle_t *new_handle(int nblocks)
  * Return a pointer to a newly allocated handle, or an ERR_PTR() value
  * on failure.
  */
-handle_t *jbd2__journal_start(journal_t *journal, int nblocks, gfp_t gfp_mask,
-			      unsigned int type, unsigned int line_no)
+handle_t *jbd2__journal_start(journal_t *journal, int nblocks, gfp_t gfp_mask)
 {
 	handle_t *handle = journal_current_handle();
 	int err;
@@ -383,11 +378,6 @@ handle_t *jbd2__journal_start(journal_t *journal, int nblocks, gfp_t gfp_mask,
 		current->journal_info = NULL;
 		handle = ERR_PTR(err);
 	}
-	handle->h_type = type;
-	handle->h_line_no = line_no;
-	trace_jbd2_handle_start(journal->j_fs_dev->bd_dev,
-				handle->h_transaction->t_tid, type,
-				line_no, nblocks);
 	return handle;
 }
 EXPORT_SYMBOL(jbd2__journal_start);
@@ -395,7 +385,7 @@ EXPORT_SYMBOL(jbd2__journal_start);
 
 handle_t *jbd2_journal_start(journal_t *journal, int nblocks)
 {
-	return jbd2__journal_start(journal, nblocks, GFP_NOFS, 0, 0);
+	return jbd2__journal_start(journal, nblocks, GFP_NOFS);
 }
 EXPORT_SYMBOL(jbd2_journal_start);
 
@@ -457,14 +447,7 @@ int jbd2_journal_extend(handle_t *handle, int nblocks)
 		goto unlock;
 	}
 
-	trace_jbd2_handle_extend(journal->j_fs_dev->bd_dev,
-				 handle->h_transaction->t_tid,
-				 handle->h_type, handle->h_line_no,
-				 handle->h_buffer_credits,
-				 nblocks);
-
 	handle->h_buffer_credits += nblocks;
-	handle->h_requested_credits += nblocks;
 	atomic_add(nblocks, &transaction->t_outstanding_credits);
 	result = 0;
 
@@ -517,10 +500,10 @@ int jbd2__journal_restart(handle_t *handle, int nblocks, gfp_t gfp_mask)
 		   &transaction->t_outstanding_credits);
 	if (atomic_dec_and_test(&transaction->t_updates))
 		wake_up(&journal->j_wait_updates);
-	tid = transaction->t_tid;
 	spin_unlock(&transaction->t_handle_lock);
 
 	jbd_debug(2, "restarting handle %p\n", handle);
+	tid = transaction->t_tid;
 	need_to_start = !tid_geq(journal->j_commit_request, tid);
 	read_unlock(&journal->j_state_lock);
 	if (need_to_start)
@@ -1064,12 +1047,9 @@ out:
 void jbd2_journal_set_triggers(struct buffer_head *bh,
 			       struct jbd2_buffer_trigger_type *type)
 {
-	struct journal_head *jh = jbd2_journal_grab_journal_head(bh);
+	struct journal_head *jh = bh2jh(bh);
 
-	if (WARN_ON(!jh))
-		return;
 	jh->b_triggers = type;
-	jbd2_journal_put_journal_head(jh);
 }
 
 void jbd2_buffer_frozen_trigger(struct journal_head *jh, void *mapped_data,
@@ -1121,18 +1101,17 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 {
 	transaction_t *transaction = handle->h_transaction;
 	journal_t *journal = transaction->t_journal;
-	struct journal_head *jh;
+	struct journal_head *jh = bh2jh(bh);
 	int ret = 0;
 
+	jbd_debug(5, "journal_head %p\n", jh);
+	JBUFFER_TRACE(jh, "entry");
 	if (is_handle_aborted(handle))
 		goto out;
-	jh = jbd2_journal_grab_journal_head(bh);
-	if (!jh) {
+	if (!buffer_jbd(bh)) {
 		ret = -EUCLEAN;
 		goto out;
 	}
-	jbd_debug(5, "journal_head %p\n", jh);
-	JBUFFER_TRACE(jh, "entry");
 
 	jbd_lock_bh_state(bh);
 
@@ -1143,10 +1122,7 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 		 * once a transaction -bzzz
 		 */
 		jh->b_modified = 1;
-		if (handle->h_buffer_credits <= 0) {
-			ret = -ENOSPC;
-			goto out_unlock_bh;
-		}
+		J_ASSERT_JH(jh, handle->h_buffer_credits > 0);
 		handle->h_buffer_credits--;
 	}
 
@@ -1226,9 +1202,9 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	spin_unlock(&journal->j_list_lock);
 out_unlock_bh:
 	jbd_unlock_bh_state(bh);
-	jbd2_journal_put_journal_head(jh);
 out:
 	JBUFFER_TRACE(jh, "exit");
+	WARN_ON(ret);	/* All errors are bugs, so dump the stack */
 	return ret;
 }
 
@@ -1411,13 +1387,6 @@ int jbd2_journal_stop(handle_t *handle)
 	}
 
 	jbd_debug(4, "Handle %p going down\n", handle);
-	trace_jbd2_handle_stats(journal->j_fs_dev->bd_dev,
-				handle->h_transaction->t_tid,
-				handle->h_type, handle->h_line_no,
-				jiffies - handle->h_start_jiffies,
-				handle->h_sync, handle->h_requested_credits,
-				(handle->h_requested_credits -
-				 handle->h_buffer_credits));
 
 	/*
 	 * Implement synchronous transaction batching.  If the handle
